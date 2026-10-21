@@ -8,7 +8,7 @@ export default function HowItWorksSection() {
           className="relative min-h-75 overflow-hidden rounded-3xl bg-slate-200 bg-cover bg-center sm:min-h-105"
           style={{
             backgroundImage:
-              "url('https://images.unsplash.com/photo-1632823471565-1ecdf5c6a7d9?auto=format&fit=crop&w=1200&q=85')",
+              "url('https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTIblYqHGchZK2OivJ9a5JmQwLwu96_QwyT8aD2OnpdVyayZFGawYjPv10f&s=10')",
           }}
         >
           <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-white/60 bg-white/95 p-5 shadow-xl sm:inset-x-6 sm:bottom-6">
