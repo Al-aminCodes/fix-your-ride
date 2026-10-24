@@ -1,8 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useSearchParams } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowRight,
   BadgeCheck,
@@ -13,12 +14,13 @@ import {
   Star,
   Wrench,
   X,
+  LoaderCircle,
+  RefreshCw,
 } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Mechanic = {
-  id: number;
+  _id: string;
   name: string;
   workshop: string;
   location: string;
@@ -33,92 +35,7 @@ type Mechanic = {
   image?: string;
 };
 
-const mechanics: Mechanic[] = [
-  {
-    id: 1,
-    name: "Rahim Ahmed",
-    workshop: "Rahim Auto Care",
-    location: "Dhanmondi, Dhaka",
-    distance: "1.2 km away",
-    rating: 4.9,
-    reviews: 128,
-    specialties: ["Engine Repair", "Oil Change", "Diagnostics"],
-    experience: 8,
-    hourlyRate: 800,
-    available: true,
-    verified: true,
-  },
-  {
-    id: 2,
-    name: "Karim Hasan",
-    workshop: "City Car Service",
-    location: "Mirpur, Dhaka",
-    distance: "2.5 km away",
-    rating: 4.8,
-    reviews: 96,
-    specialties: ["Brake Repair", "Suspension", "Engine Repair"],
-    experience: 6,
-    hourlyRate: 700,
-    available: true,
-    verified: true,
-  },
-  {
-    id: 3,
-    name: "Sabbir Hossain",
-    workshop: "Sabbir Motor Works",
-    location: "Uttara, Dhaka",
-    distance: "4.1 km away",
-    rating: 4.7,
-    reviews: 74,
-    specialties: ["Electrical", "Diagnostics", "AC Repair"],
-    experience: 5,
-    hourlyRate: 600,
-    available: false,
-    verified: true,
-  },
-  {
-    id: 4,
-    name: "Imran Chowdhury",
-    workshop: "Pro Auto Solutions",
-    location: "Mohammadpur, Dhaka",
-    distance: "3.0 km away",
-    rating: 4.9,
-    reviews: 156,
-    specialties: ["AC Repair", "Oil Change", "Brake Repair"],
-    experience: 10,
-    hourlyRate: 1000,
-    available: true,
-    verified: true,
-  },
-  {
-    id: 5,
-    name: "Nayeem Islam",
-    workshop: "Nayeem Bike & Car Care",
-    location: "Bashundhara, Dhaka",
-    distance: "5.3 km away",
-    rating: 4.6,
-    reviews: 52,
-    specialties: ["Engine Repair", "Electrical"],
-    experience: 4,
-    hourlyRate: 500,
-    available: true,
-    verified: false,
-  },
-  {
-    id: 6,
-    name: "Fahim Rahman",
-    workshop: "Expert Auto Workshop",
-    location: "Banani, Dhaka",
-    distance: "2.8 km away",
-    rating: 4.8,
-    reviews: 89,
-    specialties: ["Diagnostics", "Suspension", "AC Repair"],
-    experience: 7,
-    hourlyRate: 900,
-    available: true,
-    verified: true,
-  },
-];
+const API_URL = "http://localhost:5000/machanics";
 
 const specialties = [
   "All Services",
@@ -129,22 +46,101 @@ const specialties = [
   "AC Repair",
   "Diagnostics",
   "Suspension",
+  "Transmission Repair",
+  "Battery Repair",
 ];
 
 export default function FindMechanicsPage() {
+  const searchParams = useSearchParams();
+
+  const [mechanics, setMechanics] = useState<Mechanic[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
   const [specialty, setSpecialty] = useState("All Services");
   const [availability, setAvailability] = useState("all");
   const [sortBy, setSortBy] = useState("rating");
   const [maxRate, setMaxRate] = useState("all");
 
-  const searchParams = useSearchParams();
-
   const [search, setSearch] = useState(() => searchParams.get("issue") ?? "");
-
   const [location, setLocation] = useState(
     () => searchParams.get("location") ?? "",
   );
 
+  // Fetch mechanic data from MongoDB through Express.
+  const fetchMechanics = useCallback(async (signal?: AbortSignal) => {
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+        signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load mechanics (HTTP ${response.status}).`);
+      }
+
+      const data: unknown = await response.json();
+
+      if (!Array.isArray(data)) {
+        throw new Error(
+          "Invalid API response. Expected an array of mechanics.",
+        );
+      }
+
+      // MongoDB documents should have a serialized _id string.
+      const validMechanics = data.filter(
+        (item): item is Mechanic =>
+          typeof item === "object" &&
+          item !== null &&
+          typeof item._id === "string" &&
+          typeof item.name === "string" &&
+          typeof item.workshop === "string" &&
+          typeof item.location === "string" &&
+          typeof item.rating === "number" &&
+          typeof item.hourlyRate === "number" &&
+          typeof item.experience === "number" &&
+          Array.isArray(item.specialties) &&
+          typeof item.available === "boolean" &&
+          typeof item.verified === "boolean",
+      );
+
+      setMechanics(validMechanics);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        return;
+      }
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while loading mechanics.",
+      );
+    } finally {
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void fetchMechanics(controller.signal);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [fetchMechanics]);
+
+  // Filter and sort the fetched MongoDB records.
   const filteredMechanics = useMemo(() => {
     const query = search.trim().toLowerCase();
     const locationQuery = location.trim().toLowerCase();
@@ -186,7 +182,7 @@ export default function FindMechanicsPage() {
       if (sortBy === "experience") return b.experience - a.experience;
       return 0;
     });
-  }, [search, location, specialty, availability, sortBy, maxRate]);
+  }, [mechanics, search, location, specialty, availability, sortBy, maxRate]);
 
   function clearFilters() {
     setSearch("");
@@ -195,6 +191,23 @@ export default function FindMechanicsPage() {
     setAvailability("all");
     setSortBy("rating");
     setMaxRate("all");
+
+    window.history.replaceState(null, "", "/mechanics");
+  }
+
+  function updateSearchUrl() {
+    const params = new URLSearchParams();
+
+    if (search.trim()) params.set("issue", search.trim());
+    if (location.trim()) params.set("location", location.trim());
+
+    const queryString = params.toString();
+
+    window.history.replaceState(
+      null,
+      "",
+      `/mechanics${queryString ? `?${queryString}` : ""}`,
+    );
   }
 
   return (
@@ -219,13 +232,16 @@ export default function FindMechanicsPage() {
             </p>
           </div>
 
-          {/* Search bar */}
+          {/* Search */}
           <div className="mt-9 grid gap-3 rounded-2xl bg-white p-3 shadow-xl md:grid-cols-[1fr_1fr_auto]">
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4">
               <Search className="shrink-0 text-orange-500" size={20} />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") updateSearchUrl();
+                }}
                 placeholder="Problem or service..."
                 aria-label="Search by problem or service"
                 className="h-12 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
@@ -237,6 +253,9 @@ export default function FindMechanicsPage() {
               <input
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") updateSearchUrl();
+                }}
                 placeholder="Area or city..."
                 aria-label="Search by location"
                 className="h-12 min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400"
@@ -244,17 +263,7 @@ export default function FindMechanicsPage() {
             </div>
 
             <Button
-              onClick={() => {
-                const params = new URLSearchParams();
-                if (search.trim()) params.set("issue", search.trim());
-                if (location.trim()) params.set("location", location.trim());
-
-                window.history.replaceState(
-                  null,
-                  "",
-                  `/mechanics${params.size ? `?${params.toString()}` : ""}`,
-                );
-              }}
+              onClick={updateSearchUrl}
               className="h-12 bg-orange-500 px-7 text-white hover:bg-orange-600"
             >
               Find Mechanics
@@ -289,7 +298,9 @@ export default function FindMechanicsPage() {
               Available Mechanics
             </h2>
             <p className="mt-2 text-sm text-slate-500">
-              Showing {filteredMechanics.length} of {mechanics.length} mechanics
+              {loading
+                ? "Loading mechanic data..."
+                : `Showing ${filteredMechanics.length} of ${mechanics.length} mechanics`}
             </p>
           </div>
 
@@ -374,6 +385,7 @@ export default function FindMechanicsPage() {
                 <option value="700">৳700 / hour</option>
                 <option value="800">৳800 / hour</option>
                 <option value="1000">৳1,000 / hour</option>
+                <option value="1500">৳1,500 / hour</option>
               </select>
             </div>
           </div>
@@ -390,12 +402,46 @@ export default function FindMechanicsPage() {
           </div>
         </div>
 
+        {/* Loading */}
+        {loading && (
+          <div className="mt-7 flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-16 text-center">
+            <LoaderCircle className="animate-spin text-orange-500" size={36} />
+            <p className="mt-4 font-medium text-slate-800">
+              Loading mechanics...
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Fetching mechanic details from the server.
+            </p>
+          </div>
+        )}
+
+        {/* Error */}
+        {!loading && error && (
+          <div className="mt-7 rounded-2xl border border-red-200 bg-white px-5 py-12 text-center">
+            <h3 className="text-lg font-bold text-slate-900">
+              Could not load mechanics
+            </h3>
+            <p className="mt-2 text-sm text-red-600">{error}</p>
+            <p className="mt-2 text-sm text-slate-500">
+              Check that your Express server is running and its GET endpoint
+              matches the frontend URL.
+            </p>
+            <Button
+              onClick={() => void fetchMechanics()}
+              className="mt-5 bg-orange-500 text-white hover:bg-orange-600"
+            >
+              <RefreshCw size={16} className="mr-2" />
+              Try again
+            </Button>
+          </div>
+        )}
+
         {/* Mechanic cards */}
-        {filteredMechanics.length > 0 ? (
+        {!loading && !error && filteredMechanics.length > 0 && (
           <div className="mt-7 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {filteredMechanics.map((mechanic) => (
               <Card
-                key={mechanic.id}
+                key={mechanic._id}
                 className="overflow-hidden rounded-2xl border-slate-200 bg-white shadow-sm transition duration-200 hover:-translate-y-1 hover:shadow-lg"
               >
                 <CardContent className="p-5">
@@ -484,7 +530,7 @@ export default function FindMechanicsPage() {
                     </div>
 
                     <Link
-                      href={`/mechanics/${mechanic.id}`}
+                      href={`/mechanics/${encodeURIComponent(mechanic._id)}`}
                       className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600"
                     >
                       View Profile
@@ -495,7 +541,10 @@ export default function FindMechanicsPage() {
               </Card>
             ))}
           </div>
-        ) : (
+        )}
+
+        {/* Empty state */}
+        {!loading && !error && filteredMechanics.length === 0 && (
           <div className="mt-7 rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-16 text-center">
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-orange-50 text-orange-500">
               <Search size={25} />
@@ -504,11 +553,13 @@ export default function FindMechanicsPage() {
               No mechanics found
             </h3>
             <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
-              Try another location, service specialty, or hourly rate.
+              {mechanics.length === 0
+                ? "There are no mechanic records in the database yet."
+                : "Try another location, service specialty, or hourly rate."}
             </p>
             <Button
               onClick={clearFilters}
-              className="mt-5 bg-orange-500 hover:bg-orange-600"
+              className="mt-5 bg-orange-500 text-white hover:bg-orange-600"
             >
               Clear filters
             </Button>

@@ -1,5 +1,7 @@
 import { betterAuth } from "better-auth";
+import { admin } from "better-auth/plugins";
 import { mongodbAdapter } from "@better-auth/mongo-adapter";
+
 import clientPromise from "@/lib/db";
 
 const client = await clientPromise;
@@ -14,7 +16,7 @@ export const auth = betterAuth({
 
   user: {
     additionalFields: {
-      role: {
+      accountType: {
         type: "string",
         required: true,
         defaultValue: "CUSTOMER",
@@ -22,4 +24,11 @@ export const auth = betterAuth({
       },
     },
   },
+
+  plugins: [
+    admin({
+      defaultRole: "user",
+      adminRoles: ["admin"],
+    }),
+  ],
 });

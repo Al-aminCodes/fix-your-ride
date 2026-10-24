@@ -13,7 +13,6 @@ export default function HomePage() {
       <ServicesSection />
 
       <HowItWorksSection />
-
       <BenefitsSection />
 
       <TestimonialsSection />

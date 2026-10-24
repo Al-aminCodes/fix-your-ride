@@ -43,10 +43,12 @@ export default function LoginForm() {
         return;
       }
 
-      if (data.user.role === "MECHANIC") {
+      if (data.user.role === "admin") {
+        router.push("/dashboard/admin");
+      } else if (data.user.role === "mechanic") {
         router.push("/dashboard/mechanic");
       } else {
-        router.push("/dashboard/user");
+        router.push("/mechanics");
       }
 
       router.refresh();

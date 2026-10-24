@@ -1,186 +1,328 @@
-import Link from "next/link";
-import {
-  Wrench,
-  UserRound,
-  CalendarDays,
-  Star,
-  Settings,
-  ArrowRight,
-  Clock,
-  CheckCircle2,
-} from "lucide-react";
-import { requireRole } from "@/lib/require-role";
+"use client";
 
-const stats = [
-  {
-    label: "Total Requests",
-    value: "10",
-    icon: CalendarDays,
-    color: "bg-blue-50 text-blue-600",
-  },
-  {
-    label: "Completed Jobs",
-    value: "5",
-    icon: CheckCircle2,
-    color: "bg-green-50 text-green-600",
-  },
-  {
-    label: "Average Rating",
-    value: "4.9",
-    icon: Star,
-    color: "bg-amber-50 text-amber-600",
-  },
-  {
-    label: "Experience",
-    value: "5 years",
-    icon: Clock,
-    color: "bg-purple-50 text-purple-600",
-  },
-];
+import { useEffect, useState } from "react";
+import { authClient } from "@/lib/auth-client";
 
-export default async function MechanicDashboardPage() {
-  const session = await requireRole("MECHANIC");
-  const name = session.user.name || "Mechanic";
+interface RepairRequest {
+  _id: string;
+  mechanicId: string;
+  vehicleBrand: string;
+  vehicleModel: string;
+  registrationNumber?: string;
+  problemCategory: string;
+  description: string;
+  preferredDate: string;
+  location: string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt?: string;
+}
+
+const API_URL = process.env.NEXT_PUBLIC_SERVER_BASE_URL;
+
+export default function MechanicDashboard() {
+  const { data: session, isPending } = authClient.useSession();
+
+  const [requests, setRequests] = useState<RepairRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  async function handleUpdateStatus(
+    requestId: string,
+    status: "accepted" | "rejected",
+  ) {
+    const apiUrl = process.env.NEXT_PUBLIC_SERVER_BASE_URL;
+
+    if (!apiUrl) {
+      setError("API URL is missing.");
+      return;
+    }
+
+    setUpdatingId(requestId);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `${apiUrl}/repair-requests/${requestId}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to update request status.");
+      }
+
+      setRequests((currentRequests) =>
+        currentRequests.map((request) =>
+          request._id === requestId ? { ...request, status } : request,
+        ),
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  const mechanicId = session?.user?.id;
+
+  useEffect(() => {
+    if (isPending || !mechanicId) {
+      return;
+    }
+
+    const authenticatedMechanicId = mechanicId;
+    let cancelled = false;
+
+    async function fetchRequests() {
+      try {
+        const apiUrl = process.env.NEXT_PUBLIC_SERVER_BASE_URL;
+
+        if (!apiUrl) {
+          throw new Error("API URL is missing. Check your .env.local file.");
+        }
+
+        const response = await fetch(
+          `${apiUrl}/repair-requests/mechanic/${encodeURIComponent(authenticatedMechanicId)}`,
+        );
+
+        if (!response.ok) {
+          throw new Error("Failed to load repair requests.");
+        }
+
+        const data: RepairRequest[] = await response.json();
+
+        if (!cancelled) {
+          setRequests(data);
+          setError("");
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Something went wrong.",
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchRequests();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [mechanicId, isPending]);
+
+  if (isPending) {
+    return (
+      <main className="mx-auto max-w-6xl px-4 py-12">
+        <p className="animate-pulse text-slate-500">Checking your session...</p>
+      </main>
+    );
+  }
+
+  if (!mechanicId) {
+    return (
+      <main className="mx-auto max-w-6xl px-4 py-12">
+        <p className="rounded-xl bg-orange-50 p-4 text-orange-700">
+          Please log in to view your mechanic dashboard.
+        </p>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main className="mx-auto max-w-6xl px-4 py-12">
+        <p className="animate-pulse text-slate-500">
+          Loading repair requests...
+        </p>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="mx-auto max-w-6xl px-4 py-12">
+        <p className="rounded-xl bg-red-50 p-4 text-red-700">{error}</p>
+      </main>
+    );
+  }
+
+  const pendingCount = requests.filter(
+    (request) => request.status === "pending",
+  ).length;
+
+  const acceptedCount = requests.filter(
+    (request) => request.status === "accepted",
+  ).length;
+
+  const rejectedCount = requests.filter(
+    (request) => request.status === "rejected",
+  ).length;
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {/* Welcome */}
-        <section className="overflow-hidden rounded-2xl bg-slate-950 p-6 text-white sm:p-9">
-          <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-center">
-            <div>
-              <p className="text-sm font-medium text-orange-400">
-                MECHANIC DASHBOARD
-              </p>
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <div className="mb-8">
+          <p className="text-sm font-semibold uppercase tracking-wider text-orange-600">
+            Mechanic workspace
+          </p>
 
-              <h1 className="mt-3 text-2xl font-bold sm:text-3xl">
-                Welcome back, {name}!
-              </h1>
+          <h1 className="mt-2 text-3xl font-bold text-slate-900">
+            Repair Requests
+          </h1>
 
-              <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300">
-                Manage your mechanic profile, track service requests, and grow
-                your repair business with FixMyRide.
+          <p className="mt-2 text-slate-600">
+            Manage repair requests assigned to you.
+          </p>
+        </div>
+
+        <div className="mb-8 grid gap-4 sm:grid-cols-3">
+          {[
+            {
+              label: "Pending",
+              count: pendingCount,
+              color: "text-orange-600",
+            },
+            {
+              label: "Accepted",
+              count: acceptedCount,
+              color: "text-green-600",
+            },
+            {
+              label: "Rejected",
+              count: rejectedCount,
+              color: "text-red-600",
+            },
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <p className="text-sm text-slate-500">{item.label}</p>
+              <p className={`mt-2 text-3xl font-bold ${item.color}`}>
+                {item.count}
               </p>
             </div>
+          ))}
+        </div>
 
-            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-orange-500">
-              <Wrench size={32} />
-            </div>
+        {requests.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+            <h2 className="text-xl font-semibold text-slate-900">
+              No repair requests yet
+            </h2>
+            <p className="mt-2 text-slate-500">
+              New requests assigned to you will appear here.
+            </p>
           </div>
-        </section>
-
-        {/* Stats */}
-        <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
-
-            return (
-              <div
-                key={stat.label}
-                className="rounded-2xl border border-slate-200 bg-white p-5"
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-2">
+            {requests.map((request) => (
+              <article
+                key={request._id}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm text-slate-500">{stat.label}</p>
-                  <span
-                    className={`flex h-10 w-10 items-center justify-center rounded-xl ${stat.color}`}
-                  >
-                    <Icon size={20} />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      {request.vehicleBrand} {request.vehicleModel}
+                    </h2>
+
+                    <p className="mt-1 text-sm text-slate-500">
+                      {request.registrationNumber ||
+                        "Registration not provided"}
+                    </p>
+                  </div>
+
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold capitalize text-slate-700">
+                    {request.status}
                   </span>
                 </div>
 
-                <p className="mt-4 text-xl font-bold text-slate-900">
-                  {stat.value}
-                </p>
-              </div>
-            );
-          })}
-        </section>
+                <div className="mt-5 space-y-3 text-sm text-slate-600">
+                  <p>
+                    <span className="font-semibold text-slate-900">
+                      Problem:
+                    </span>{" "}
+                    {request.problemCategory}
+                  </p>
 
-        {/* Dashboard actions */}
-        <section className="mt-9">
-          <h2 className="text-xl font-bold text-slate-900">
-            Manage your business
-          </h2>
+                  <p>{request.description}</p>
 
-          <p className="mt-2 text-sm text-slate-500">
-            Keep your profile updated so customers can find you.
-          </p>
+                  <p>
+                    <span className="font-semibold text-slate-900">
+                      Preferred date:
+                    </span>{" "}
+                    {request.preferredDate}
+                  </p>
 
-          <div className="mt-5 grid gap-5 md:grid-cols-2">
-            <Link
-              href="/dashboard/mechanic/profile"
-              className="group rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-orange-300 hover:shadow-md"
-            >
-              <div className="flex items-start justify-between">
-                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                  <UserRound size={24} />
-                </span>
+                  <p>
+                    <span className="font-semibold text-slate-900">
+                      Location:
+                    </span>{" "}
+                    {request.location}
+                  </p>
+                </div>
 
-                <ArrowRight
-                  size={20}
-                  className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-orange-500"
-                />
-              </div>
+                {requests.map((request) => (
+                  <article
+                    key={request._id}
+                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                  >
+                    {/* Your existing vehicle details and status */}
+                    <h2 className="text-lg font-bold">
+                      {request.vehicleBrand} {request.vehicleModel}
+                    </h2>
 
-              <h3 className="mt-5 font-bold text-slate-900">
-                My Mechanic Profile
-              </h3>
+                    {/* Your existing problem, date, and location details */}
 
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Add your workshop details, location, specialties, experience,
-                and service prices.
-              </p>
-            </Link>
+                    {/* ADD THE BUTTONS HERE */}
+                    {request.status === "pending" && (
+                      <div className="mt-5 flex gap-3 border-t border-slate-100 pt-4">
+                        <button
+                          type="button"
+                          disabled={updatingId === request._id}
+                          onClick={() =>
+                            handleUpdateStatus(request._id, "accepted")
+                          }
+                          className="flex-1 rounded-xl bg-green-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          {updatingId === request._id
+                            ? "Updating..."
+                            : "Accept Request"}
+                        </button>
 
-            <Link
-              href="/dashboard/mechanic/requests"
-              className="group rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-orange-300 hover:shadow-md"
-            >
-              <div className="flex items-start justify-between">
-                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                  <CalendarDays size={24} />
-                </span>
-
-                <ArrowRight
-                  size={20}
-                  className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-orange-500"
-                />
-              </div>
-
-              <h3 className="mt-5 font-bold text-slate-900">
-                Service Requests
-              </h3>
-
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                View customer repair requests and manage their status.
-              </p>
-            </Link>
-
-            <Link
-              href="/dashboard/mechanic/settings"
-              className="group rounded-2xl border border-slate-200 bg-white p-6 transition hover:border-orange-300 hover:shadow-md md:col-span-2"
-            >
-              <div className="flex items-start justify-between">
-                <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
-                  <Settings size={24} />
-                </span>
-
-                <ArrowRight
-                  size={20}
-                  className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-orange-500"
-                />
-              </div>
-
-              <h3 className="mt-5 font-bold text-slate-900">
-                Account Settings
-              </h3>
-
-              <p className="mt-2 text-sm leading-6 text-slate-500">
-                Manage your account and preferences.
-              </p>
-            </Link>
+                        <button
+                          type="button"
+                          disabled={updatingId === request._id}
+                          onClick={() =>
+                            handleUpdateStatus(request._id, "rejected")
+                          }
+                          className="flex-1 rounded-xl border border-red-200 px-4 py-3 text-sm font-semibold text-red-600 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </article>
+                ))}
+              </article>
+            ))}
           </div>
-        </section>
+        )}
       </div>
     </main>
   );
